@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EKS Upgrade · Analysis &amp; Production Roadmap · 1.24 → 1.37</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#fff; --ink:#1a1f26; --muted:#5c6773; --line:#e3e8ee;
+    --red:#c0392b; --redbg:#fdecea; --yellow:#8a6d00; --yellowbg:#fff6db;
+    --warn:#8a5a00; --warnbg:#fff1e0; --ok:#1e7a46; --okbg:#e7f6ee;
+    --verify:#7a5c00; --verifybg:#fbf3d6; --accent:#0a66c2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);background:#f4f6f9}
+  header{background:var(--bg);color:#fff;padding:22px 28px}
+  header h1{margin:0 0 6px;font-size:20px}
+  header .meta{color:#aeb9c4;font-size:13px}
+  .badge{display:inline-block;padding:2px 9px;border-radius:12px;font-size:12px;font-weight:600;vertical-align:middle}
+  .badge-live{background:#123d2a;color:#5ee89b}
+  .badge-docs{background:#4a3a0a;color:#ffd968}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px 60px}
+  .intro{background:#fff;border:1px solid var(--line);border-left:5px solid var(--accent);
+       border-radius:8px;padding:14px 18px;margin:16px 0 0;font-size:14px}
+  .intro b{color:var(--accent)}
+  nav.tabs{display:flex;flex-wrap:wrap;gap:4px;margin:16px 0 0;border-bottom:2px solid var(--line)}
+  nav.tabs button{border:0;background:transparent;padding:11px 16px;font-size:14px;font-weight:600;
+       color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px}
+  nav.tabs button:hover{color:var(--ink)}
+  nav.tabs button.active{color:var(--accent);border-bottom-color:var(--accent)}
+  nav.tabs .sep{flex:0 0 1px;background:var(--line);margin:6px 6px}
+  nav.tabs button.roadmap-tab.active{color:#1e7a46;border-bottom-color:#1e7a46}
+  .tab-panel{display:none;background:var(--panel);border:1px solid var(--line);border-top:0;
+       padding:22px 24px;border-radius:0 0 8px 8px}
+  .tab-panel.active{display:block}
+  h2{font-size:17px;margin:0 0 4px}
+  h3{font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:22px 0 8px}
+  table{width:100%;border-collapse:collapse;margin:6px 0 4px;font-size:14px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+  td.src{color:var(--muted);font-size:12px;white-space:nowrap}
+  .sev{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600}
+  .sev-red{background:var(--redbg);color:var(--red)} .sev-yellow{background:var(--yellowbg);color:var(--yellow)}
+  .sev-warn{background:var(--warnbg);color:var(--warn)} .sev-ok{background:var(--okbg);color:var(--ok)}
+  .sev-verify{background:var(--verifybg);color:var(--verify)}
+  h3.layer{margin:20px 0 6px;padding:7px 12px;border-radius:8px;font-size:14px;display:flex;
+    justify-content:space-between;align-items:center;border-left:5px solid #999;text-transform:none;letter-spacing:0}
+  h3.layer .owner{font-size:11.5px;font-weight:500;color:var(--muted)}
+  .layer-iac{background:#eef4ff;border-left-color:#1a5fb4}
+  .layer-cluster{background:#eafaf1;border-left-color:#1e7a46}
+  .layer-addons{background:#fff9e6;border-left-color:#c99700}
+  .layer-dataplane{background:#fff4e6;border-left-color:#ec7211}
+  .layer-app{background:#fdecef;border-left-color:#b42318}
+  .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0}
+  .card{border:1px solid var(--line);border-radius:8px;padding:14px 16px;background:#fbfcfe}
+  .card h4{margin:0 0 8px;font-size:13px}
+  .card ul{margin:0;padding-left:18px} .card li{margin:3px 0}
+  .choice{border:1px solid var(--line);border-radius:8px;padding:6px 16px;margin:10px 0;background:#fbfcfe}
+  .choice.rec{border-color:#1e7a46;background:#e7f6ee}
+  .seq{font-size:16px;font-weight:600;margin:6px 0 2px}
+  code{background:#eef2f6;padding:1px 5px;border-radius:4px;font-size:13px}
+  ol.phases{margin:8px 0;padding-left:20px} ol.phases li{margin:6px 0}
+  .flow{font-weight:600;font-size:15px;margin:8px 0}
+  .gate{background:#fdecea;border:1px solid #f5c6c0;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:14px}
+  footer{color:var(--muted);font-size:12px;padding:16px 28px}
+</style>
+</head>
+<body>
+<header>
+  <h1>EKS Upgrade · Analysis &amp; Production Roadmap · 1.24 → 1.37 <span class="badge badge-docs">DOCS-ONLY</span></h1>
+  <div class="meta">Cluster <b>outdated-eks-sample</b> (Terraform default) · Region <b>us-east-1</b> (Terraform default) · 1 reconciliation step + 6 in-place hops · Generated 2026-11-13</div>
+</header>
+
+<div class="wrap">
+  <div class="intro">
+    This report has <b>two sections</b>, shown as tabs below. It was produced before any code change.
+    <ul style="margin:6px 0 0;padding-left:20px">
+      <li><b>1 · Analysis</b> — what breaks in <b>this</b> repo/cluster, per hop, grouped by layer
+          (IaC · Cluster · Add-ons · Data plane · App/Workload). Start with <b>Overview</b>.</li>
+      <li><b>2 · Production Roadmap</b> — how to roll the change out to production safely
+          (phase order, Dev→UAT→Prod, safety gates).</li>
+    </ul>
+    <p style="margin:8px 0 0"><span class="sev sev-verify">⚠️ VERIFY — no AWS access</span> The EKS read APIs
+       (<code>describe-cluster</code>, <code>describe-cluster-versions</code>, <code>list-clusters</code>) returned
+       <i>AccessDenied</i> in this environment, so every "current cluster" value below comes from the repository
+       and public documentation and must be confirmed against the live cluster.</p>
+  </div>
+
+  <nav class="tabs" id="tabbar">
+    <button class="active" data-tab="overview">Overview</button>
+    <button data-tab="hop-0">Step 0: 1.24→1.31</button>
+    <button data-tab="hop-1">Hop 1: 1.31→1.32</button>
+    <button data-tab="hop-2">Hop 2: 1.32→1.33</button>
+    <button data-tab="hop-3">Hops 3–6: 1.33→1.37</button>
+    <span class="sep"></span>
+    <button class="roadmap-tab" data-tab="roadmap">Production Roadmap</button>
+    <button data-tab="sources">Sources</button>
+  </nav>
+
+  <!-- ===================== OVERVIEW ===================== -->
+  <section class="tab-panel active" id="overview">
+    <h2>Why upgrade</h2>
+    <div class="card" style="background:#eef4ff;border-color:#cfe0fb">
+      <ul>
+        <li><b>1.24 is past the end of extended support</b> (ended <b>2025-01-31</b>). Amazon EKS automatically upgrades
+            clusters on versions past extended support, so the live control plane has most likely already been moved
+            forward and the Terraform no longer matches reality. EKS no longer accepts 1.24–1.30 for new clusters.
+            [src: aws eks describe-cluster-versions --include-all, checked 2026-11-11]</li>
+        <li><b>1.31 is the oldest version EKS still offers</b> and is itself in <b>extended support</b> (per-cluster-hour
+            surcharge); its extended support ends around <b>2026-11-26</b> <span class="sev sev-verify">VERIFY</span>
+            — keep moving forward quickly. [src: EKS extended-support versions]</li>
+        <li><b>Amazon Linux 2 retirement</b> — 1.32 is the last version with EKS-optimized AL2 AMIs; from 1.33 nodes must
+            run AL2023 or Bottlerocket. [src: EKS AL2 AMI deprecation notes]</li>
+        <li><b>Target 1.37</b> — recommended; end of standard support <b>2027-12-01</b>. 1.36 is also supported for more than 180 days.
+            [src: aws eks describe-cluster-versions]</li>
+      </ul>
+    </div>
+
+    <h2>Our recommendation</h2>
+    <div class="card" style="background:#eafaf1;border-color:#bfe6cf">
+      <p style="margin:0 0 6px">The repository is on <b>1.24</b>. The target is the recommended version <b>1.37</b>.</p>
+      <div class="choice rec"><b>A — Reconcile to 1.31, then full sequence to 1.37</b> (6 in-place hops, validate between each).
+        Reconcile the code to the version the control plane is actually on (1.31, the oldest EKS-offered version and where
+        the automatic upgrade lands), then go one minor at a time. <b>Recommended.</b></div>
+      <div class="choice"><b>B — Stop at 1.33</b> (first version off Amazon Linux 2, already past standard support) or <b>1.36</b>
+        (supported for more than 180 days). Fewer hops now, but you will repeat the work sooner.</div>
+      <div class="choice"><b>C — Blue/Green to 1.37</b> in one move (new cluster; clean cutover, instant rollback). Fits well here:
+        the sample is small and nodes have to move to AL2023/Bottlerocket at 1.33 anyway.</div>
+      <p style="margin:8px 0 0"><b>✅ Recommended: A</b> — 1.24 is past extended support and 1.31 is about to leave it, so the
+        code must first match a version EKS still offers, then advance one minor at a time to 1.37.</p>
+    </div>
+
+    <h2>What happens next</h2>
+    <div class="card">
+      <ol>
+        <li><b>You are reading the analysis now.</b></li>
+        <li>This transformation updates the Terraform from 1.24 to <b>1.31</b> (control plane + managed node group) on a review
+            branch and writes <code>UPGRADE-STEPS.md</code> and <code>PRE-DEPLOY-CHECKLIST.md</code>.</li>
+        <li><b>You</b> review the diff and follow the <b>Production Roadmap</b> tab to apply it. The live cluster is never touched by this transformation.</li>
+        <li>Re-run the transformation once per later hop (1.31→1.32→…→1.37), clearing the App/Workload items of each hop first.</li>
+      </ol>
+    </div>
+
+    <h2>Upgrade journey</h2>
+    <div class="seq">1.24 ⇒ 1.31 (reconcile) → 1.32 → 1.33 → 1.34 → 1.35 → 1.36 → 1.37</div>
+    <p>In-place, <b>one minor version at a time</b> after the reconciliation step. 1.37 is newer than the cached
+       breaking-change data in this report (which covers through 1.36): <span class="sev sev-verify">⚠️ VERIFY — newer than cached data</span>
+       — check the official 1.37 release notes and the Kubernetes deprecation guide before that hop.</p>
+
+    <div class="summary">
+      <div class="card"><h4>🔴 Hard blockers</h4><ul>
+        <li>Code pins 1.24 — past extended support; not accepted by EKS</li>
+        <li>Node group still at 1.24 kubelet — far outside the n-3 skew of a 1.31 control plane</li>
+        <li>APIs removed in 1.25–1.29 (PSP, <code>batch/v1beta1</code>, <code>policy/v1beta1</code>, <code>autoscaling/v2beta1|2</code>, flowcontrol <code>v1beta1|2</code>)</li>
+        <li>1.33: AL2 AMI unavailable — node AMI must move to AL2023/Bottlerocket</li>
+      </ul></div>
+      <div class="card"><h4>🟡 Required changes</h4><ul>
+        <li>Managed add-ons (vpc-cni, coredns, kube-proxy) not managed in this Terraform — upgrade them per hop</li>
+        <li>EBS CSI driver needed for in-tree EBS volumes (in-tree plugin removed in 1.27)</li>
+        <li>1.32: flowcontrol <code>v1beta3</code> removed</li>
+        <li>cgroup v2 runtime minimums at the AL2023 move</li>
+      </ul></div>
+      <div class="card"><h4>⚠️ Plan-ahead</h4><ul>
+        <li>1.33 Endpoints API deprecated → EndpointSlices</li>
+        <li>1.34 containerd 2.1; AppArmor deprecated</li>
+        <li>1.35 cgroup v1 removed; kube-proxy IPVS deprecated</li>
+        <li>1.36 <code>gitRepo</code> volumes disabled; strict IP/CIDR validation</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <!-- ===================== STEP 0 ===================== -->
+  <section class="tab-panel" id="hop-0">
+    <h2>Step 0 · 1.24 ⇒ 1.31 (reconcile code with the version EKS still offers)</h2>
+    <p>EKS no longer offers 1.25–1.30, so a 1.24→1.25 edit could not be applied. Because 1.24 is past extended support,
+       EKS automatically upgrades the control plane; 1.31 is the oldest version still offered. This step sets the code to
+       that version. <b>Confirm the live version first</b> (<code>aws eks describe-cluster --name outdated-eks-sample --query cluster.version</code>):
+       if it is already higher than 1.31, set the code to the live value instead (EKS cannot downgrade).</p>
+
+    <h3 class="layer layer-iac">① IaC <span class="owner">Owner: this transformation (automated)</span></h3>
+    <table>
+      <tr><th>Severity</th><th>Item</th><th>Current → Target</th><th>Remediation</th><th>Source</th></tr>
+      <tr><td><span class="sev sev-red">BLOCKER</span></td><td><code>aws_eks_cluster.sample.version</code> (main.tf:20)</td>
+          <td><code>1.24</code> → <code>1.31</code></td><td>Edited by this transformation</td><td class="src">[src: describe-cluster-versions]</td></tr>
+      <tr><td><span class="sev sev-red">BLOCKER</span></td><td><code>aws_eks_node_group.sample.version</code> (main.tf:32)</td>
+          <td><code>1.24</code> → <code>1.31</code></td><td>Edited by this transformation</td><td class="src">[src: EKS managed node group update docs]</td></tr>
+      <tr><td><span class="sev sev-ok">OK</span></td><td>AWS provider constraint</td><td><code>~&gt; 5.0</code></td>
+          <td>No change — supports 1.31 and the later AL2023 AMI types</td><td class="src">[src: Terraform AWS provider changelog]</td></tr>
+      <tr><td><span class="sev sev-ok">N/A</span></td><td>Node AMI type</td><td>not set (AL2 default on a 1.24 node group)</td>
+          <td>AL2 is valid at 1.31; migration belongs to the 1.33 hop</td><td class="src">[src: EKS AL2 AMI deprecation notes]</td></tr>
+    </table>
+
+    <h3 class="layer layer-cluster">② Cluster / control plane <span class="owner">Owner: operator</span></h3>
+    <table>
+      <tr><th>Severity</th><th>Item</th><th>Current → Target</th><th>Remediation</th><th>Source</th></tr>
+      <tr><td><span class="sev sev-verify">VERIFY</span></td><td>Live control-plane version</td><td>unknown (no AWS access) → expected 1.31</td>
+          <td><code>terraform plan</code> must show no change on <code>aws_eks_cluster.sample</code>; if it shows a version change, EKS has not auto-upgraded yet and the apply performs the upgrade</td>
+          <td class="src">[src: EKS extended-support docs]</td></tr>
+    </table>
+
+    <h3 class="layer layer-addons">③ Add-ons <span class="owner">Owner: operator — not auto-upgraded by EKS</span></h3>
+    <table>
+      <tr><th>Add-on</th><th>Current → Target</th><th>Note</th><th>Source</th></tr>
+      <tr><td>vpc-cni</td><td><span class="sev sev-verify">VERIFY</span> → latest for 1.31</td><td>not managed in this Terraform</td><td class="src">[src: describe-addon-versions]</td></tr>
+      <tr><td>coredns</td><td><span class="sev sev-verify">VERIFY</span> → latest for 1.31</td><td>own version line (v1.11.x), NOT v1.31.x</td><td class="src">[src: describe-addon-versions]</td></tr>
+      <tr><td>kube-proxy</td><td><span class="sev sev-verify">VERIFY</span> → v1.31.x-eksbuild.N</td><td>tracks the cluster minor</td><td class="src">[src: describe-addon-versions]</td></tr>
+      <tr><td>aws-ebs-csi-driver</td><td>probably absent → install</td><td>required for EBS PVs from 1.23 (in-tree removed 1.27)</td><td class="src">[src: EKS EBS CSI docs]</td></tr>
+    </table>
+
+    <h3 class="layer layer-dataplane">④ Data plane / nodes <span class="owner">Owner: operator</span></h3>
+    <table>
+      <tr><th>Severity</th><th>Item</th><th>Current → Target</th><th>Remediation</th><th>Source</th></tr>
+      <tr><td><span class="sev sev-red">BLOCKER</span></td><td>Managed node group kubelet skew</td><td>1.24 → 1.31</td>
+          <td>EKS auto-upgrade moves the control plane only. A 1.24 kubelet is outside n-3 of 1.31; the apply updates the node group to 1.31 (rolling replacement, respects PDBs)</td>
+          <td class="src">[src: EKS Best Practices — cluster upgrades]</td></tr>
+    </table>
+
+    <h3 class="layer layer-app">⑤ App / Workload <span class="owner">Owner: application team — check BEFORE the apply</span></h3>
+    <table>
+      <tr><th>Severity</th><th>Item</th><th>Current → Target</th><th>Remediation</th><th>Source</th></tr>
+      <tr><td><span class="sev sev-red">BLOCKER</span></td><td>APIs removed in 1.25</td><td>batch/v1beta1 CronJob, policy/v1beta1 PDB, PodSecurityPolicy, autoscaling/v2beta1 HPA, discovery/v1beta1 EndpointSlice, events/v1beta1, node.k8s.io/v1beta1 RuntimeClass</td>
+          <td>Move to <code>batch/v1</code>, <code>policy/v1</code>, Pod Security Admission, <code>autoscaling/v2</code>, <code>discovery.k8s.io/v1</code>, <code>events.k8s.io/v1</code>, <code>node.k8s.io/v1</code></td><td class="src">[src: K8s deprecation guide]</td></tr>
+      <tr><td><span class="sev sev-red">BLOCKER</span></td><td>APIs removed in 1.26 / 1.27 / 1.29</td><td>flowcontrol v1beta1 &amp; v1beta2, autoscaling/v2beta2, storage/v1beta1 CSIStorageCapacity</td>
+          <td>Move to <code>flowcontrol…/v1</code>, <code>autoscaling/v2</code>, <code>storage.k8s.io/v1</code></td><td class="src">[src: K8s deprecation guide]</td></tr>
+      <tr><td><span class="sev sev-verify">VERIFY</span></td><td>Manifests / Helm charts</td><td>none in this repo</td>
+          <td>Scan the live cluster and other repos with <code>kubent</code> / <code>pluto</code></td><td class="src">[src: EKS Best Practices — cluster upgrades]</td></tr>
+    </table>
+  </section>
+
+  <!-- ===================== HOP 1 ===================== -->
+  <section class="tab-panel" id="hop-1">
+    <h2>Hop 1 · 1.31 → 1.32</h2>
+    <h3 class="layer layer-iac">① IaC <span class="owner">Owner: this transformation (next run)</span></h3>
+    <table>
+      <tr><th>Severity</th><th>Item</th><th>Current → Target</th><th>Remediation</th><th>Source</th></tr>
+      <tr><td><span class="sev sev-red">BLOCKER</span></td><td>Cluster + node group version</td><td><code>1.31</code> → <code>1.32</code></td><td>Re-run the transformation</td><td class="src">[src: EKS update-cluster docs]</td></tr>
+    </table>
+    <h3 class="layer layer-cluster">② Cluster / control plane <span class="owner">Owner: operator</span></h3>
+    <table>
+      <tr><th>Severity</th><th>Item</th><th>Current → Target</th><th>Remediation</th><th>Source</th></tr>
+      <tr><td><span class="sev sev-yellow">REQUIRED</span></td><td>Anonymous auth restricted to health endpoints</td><td>—</td><td>Check RBAC for <code>system:unauthenticated</code></td><td class="src">[src: EKS 1.32 notes]</td></tr>
+    </table>
+    <h3 class="layer layer-addons">③ Add-ons <span class="owner">Owner: operator</span></h3>
+    <table><tr><th>Add-on</th><th>Target</th><th>Note</th><th>Source</th></tr>
+      <tr><td>vpc-cni / coredns / kube-proxy / ebs-csi</td><td>latest for 1.32</td><td>coredns keeps its own v1.11.x line</td><td class="src">[src: describe-addon-versions]</td></tr></table>
+    <h3 class="layer layer-app">⑤ App / Workload <span class="owner">Owner: application team</span></h3>
+    <table>
+      <tr><th>Severity</th><th>Item</th><th>Current → Target</th><th>Remediation</th><th>Source</th></tr>
+      <tr><td><span class="sev sev-red">BLOCKER</span></td><td>flowcontrol <code>v1beta3</code> removed</td><td>v1beta3 → v1</td><td>Migrate FlowSchema / PriorityLevelConfiguration</td><td class="src">[src: K8s deprecation guide]</td></tr>
+    </table>
+  </section>
+
+  <!-- ===================== HOP 2 ===================== -->
+  <section class="tab-panel" id="hop-2">
+    <h2>Hop 2 · 1.32 → 1.33 (Amazon Linux 2 boundary)</h2>
+    <h3 class="layer layer-iac">① IaC <span class="owner">Owner: this transformation (later run)</span></h3>
+    <table>
+      <tr><th>Severity</th><th>Item</th><th>Current → Target</th><th>Remediation</th><th>Source</th></tr>
+      <tr><td><span class="sev sev-red">BLOCKER</span></td><td>Cluster + node group version</td><td><code>1.32</code> → <code>1.33</code></td><td>Re-run the transformation</td><td class="src">[src: EKS update-cluster docs]</td></tr>
+      <tr><td><span class="sev sev-red">BLOCKER</span></td><td>Node AMI type (no AL2 AMI from 1.33)</td><td>unset (AL2) → <code>AL2023_x86_64_STANDARD</code></td><td>Add <code>ami_type</code> to <code>aws_eks_node_group.sample</code> (changing AMI type may replace the node group — check the plan)</td><td class="src">[src: EKS AL2 AMI deprecation notes]</td></tr>
+    </table>
+    <h3 class="layer layer-dataplane">④ Data plane / nodes <span class="owner">Owner: operator</span></h3>
+    <table>
+      <tr><th>Severity</th><th>Item</th><th>Current → Target</th><th>Remediation</th><th>Source</th></tr>
+      <tr><td><span class="sev sev-yellow">REQUIRED</span></td><td>Node roll to AL2023 (cgroup v2, nodeadm)</td><td>AL2 → AL2023</td><td>Rolling replacement; PDBs must allow eviction</td><td class="src">[src: EKS AL2023 docs]</td></tr>
+    </table>
+    <h3 class="layer layer-app">⑤ App / Workload <span class="owner">Owner: application team — BEFORE the upgrade</span></h3>
+    <table>
+      <tr><th>Severity</th><th>Item</th><th>Current → Target</th><th>Remediation</th><th>Source</th></tr>
+      <tr><td><span class="sev sev-red">BLOCKER</span></td><td>cgroup v2 OOMKill risk</td><td>JDK ≥8u372/11.0.16 · Node ≥16.19 · .NET ≥6.0.2</td><td>No Dockerfiles in this repo — <span class="sev sev-verify">VERIFY</span> deployed images</td><td class="src">[src: EKS Best Practices — cluster upgrades]</td></tr>
+      <tr><td><span class="sev sev-warn">PLAN-AHEAD</span></td><td>Endpoints API deprecated</td><td>Endpoints → <code>discovery.k8s.io/v1</code> EndpointSlice</td><td>Migrate consumers</td><td class="src">[src: EKS 1.33 notes]</td></tr>
+    </table>
+  </section>
+
+  <!-- ===================== HOPS 3-6 ===================== -->
+  <section class="tab-panel" id="hop-3">
+    <h2>Hops 3–6 · 1.33 → 1.34 → 1.35 → 1.36 → 1.37</h2>
+    <p>Each hop: re-run the transformation (cluster + node group version), upgrade the add-ons, roll the nodes, validate.</p>
+    <table>
+      <tr><th>Hop</th><th>Severity</th><th>Item</th><th>Remediation</th><th>Source</th></tr>
+      <tr><td>1.33→1.34</td><td><span class="sev sev-yellow">REQUIRED</span></td><td>containerd 2.1; AppArmor deprecated; VolumeAttributesClass GA (<code>storage.k8s.io/v1</code>)</td><td>Check node tooling against containerd 2.x; plan seccomp/PSS</td><td class="src">[src: EKS 1.34 notes]</td></tr>
+      <tr><td>1.34→1.35</td><td><span class="sev sev-red">BLOCKER</span></td><td>cgroup v1 removed; <code>--pod-infra-container-image</code> removed; last containerd 1.x</td><td>AL2023 is cgroup v2 (safe); Fargate pods redeploy; plan off kube-proxy IPVS</td><td class="src">[src: EKS 1.35 notes]</td></tr>
+      <tr><td>1.35→1.36</td><td><span class="sev sev-red">BLOCKER</span></td><td><code>gitRepo</code> volumes disabled; strict IP/CIDR validation; IPVS removed</td><td>Audit manifests for leading-zero IPs / non-canonical CIDRs; replace gitRepo volumes</td><td class="src">[src: EKS 1.36 notes]</td></tr>
+      <tr><td>1.36→1.37</td><td><span class="sev sev-verify">⚠️ VERIFY</span></td><td>Newer than cached data — breaking-change analysis may be incomplete</td><td>Check the official 1.37 release notes + K8s deprecation guide; resolve add-on versions live</td><td class="src">[src: EKS 1.37 notes]</td></tr>
+    </table>
+  </section>
+
+  <!-- ===================== PRODUCTION ROADMAP ===================== -->
+  <section class="tab-panel" id="roadmap">
+    <h2>Roadmap to Production</h2>
+    <p>Everything you need to take the transformed code safely to production is on this tab. EKS operates under a
+       <b>shared-responsibility model</b>: AWS upgrades the control plane; <b>you</b> own the add-ons, the data plane,
+       and validating that your workloads still run.</p>
+
+    <h3>The upgrade order (and why)</h3>
+    <ol class="phases">
+      <li><b>Assess readiness</b> — Cluster Insights + deprecated-API scan. <i>A removed API in use is rejected the moment the control plane advances.</i></li>
+      <li><b>Fix the IaC</b> (this transformation) — reviewable, repeatable across environments.</li>
+      <li><b>Fix the workloads</b> — API removals and OS/cgroup changes break apps, not infra. Remediate <b>before</b> the API server changes.</li>
+      <li><b>Upgrade the control plane</b> — AWS-managed, must lead the data plane.</li>
+      <li><b>Upgrade the add-ons</b> (VPC CNI, CoreDNS, kube-proxy, CSI) — NOT auto-upgraded; one minor at a time.</li>
+      <li><b>Upgrade the data plane</b> (nodes) to match — this is where AL2→AL2023 lands.</li>
+      <li><b>Validate, then promote</b> to the next environment.</li>
+    </ol>
+    <div class="gate" style="background:#eef4ff;border-color:#cfe0fb">ℹ️ <b>Version-skew safety net:</b> for Kubernetes ≥ 1.28, kubelet may trail the API server by up to <b>3</b> minor versions (n-3; n-2 below 1.28). A 1.24 node group under a 1.31 control plane is outside that window — upgrade the nodes as part of Step 0.</div>
+
+    <h3>Phases</h3>
+    <ol class="phases">
+      <li><b>Phase 0 · Plan &amp; assess</b> — run <code>aws eks describe-cluster</code> (control-plane version) and check node/kubelet versions; run <b>Cluster Insights</b>; read release notes; take a baseline/backup.</li>
+      <li><b>Phase 1 · Set up a safe rollout path</b> — <b>Dev → UAT/Staging → Production</b>; never upgrade prod first.</li>
+      <li><b>Phase 2 · Upgrade the IaC</b> — apply the reviewed diff; confirm the plan is <b>in-place</b>, not destroy/recreate.</li>
+      <li><b>Phase 3 · Remediate workloads</b> — scan for deprecated/removed APIs (<code>kubent</code>, <code>pluto</code>); PDBs + topology spread; cgroup v2 runtime fixes.</li>
+      <li><b>Phase 4 · Execute the rollout per environment</b> — control plane → add-ons → data plane; then clear the validation gate.</li>
+      <li><b>Phase 5 · Post-upgrade</b> — confirm versions, watch for OOMKills, redeploy Fargate workloads, update runbooks.</li>
+    </ol>
+
+    <h3>Availability during the node roll (PDBs + spread)</h3>
+    <p>The node roll drains nodes via the Eviction API, which <b>respects PodDisruptionBudgets</b>. A missing PDB risks an
+       outage; an overly strict PDB (<code>maxUnavailable: 0</code>) <b>blocks</b> the roll with <code>PodEvictionFailure</code>.</p>
+    <pre style="background:#0f1419;color:#e6edf3;padding:12px 14px;border-radius:8px;overflow:auto;font-size:12.5px">apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: myapp }
+spec:
+  minAvailable: "80%"
+  selector: { matchLabels: { app: myapp } }
+---
+# in the Deployment pod spec:
+      topologySpreadConstraints:
+        - maxSkew: 2
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: myapp } }</pre>
+
+    <h3>cgroup v2 — per-runtime minimums (at the AL2023/Bottlerocket move)</h3>
+    <table>
+      <tr><th>Runtime</th><th>Minimum safe version</th><th>Note</th></tr>
+      <tr><td>Java (OpenJDK/Corretto)</td><td>8u372 · 11.0.16 · 17+ (all)</td><td>Corretto stays <code>amazoncorretto</code></td></tr>
+      <tr><td>Node.js</td><td>≥ 16.19 (18/20 preferred)</td><td>—</td></tr>
+      <tr><td>.NET</td><td>≥ 6.0.2</td><td>6.0.0/6.0.1 misread limits</td></tr>
+      <tr><td>Python</td><td>cgroup-aware libs</td><td>check libs that read <code>/sys/fs/cgroup</code></td></tr>
+    </table>
+
+    <h3>Common workload checklist</h3>
+    <div class="card"><ul>
+      <li>Deprecated/removed APIs migrated (CronJob, PDB, HPA, PSP→PSA, <code>flowcontrol</code>, etc.).</li>
+      <li>In-tree storage → CSI (EBS/EFS CSI drivers installed).</li>
+      <li>No Docker-socket dependency (Dockershim removed in 1.24).</li>
+      <li>Resource requests/limits set; PDB + topology spread on user-facing workloads.</li>
+      <li>Accurate probes; graceful <code>SIGTERM</code>; image tags pinned/re-pullable.</li>
+    </ul></div>
+
+    <h3>Validation gate (every environment, every hop)</h3>
+    <div class="gate">✅ Control plane AND nodes report the target version.</div>
+    <div class="gate">✅ All nodes <code>Ready</code>; no <code>OOMKilled</code> / <code>CrashLoopBackOff</code> pods.</div>
+    <div class="gate">✅ Add-ons healthy (CoreDNS resolving, CNI assigning IPs, CSI mounting).</div>
+    <div class="gate">✅ No <code>PodEvictionFailure</code> during the node roll.</div>
+    <div class="gate">✅ Application smoke tests pass.</div>
+
+    <h3>KMS / encryption prerequisite</h3>
+    <p>No customer-managed KMS key is configured in this repo. If one is added for secrets, logs, or EBS, grant CloudWatch Logs
+       and the Auto Scaling service-linked role (key usage + <code>kms:CreateGrant</code>) — missing grants fail at apply time.</p>
+
+    <h3>Promote across environments</h3>
+    <div class="flow">Dev → UAT / Staging → Production</div>
+
+    <h3>One minor at a time · Blue/Green alternative</h3>
+    <p>1.31 → 1.32 → 1.33 → 1.34 → 1.35 → 1.36 → 1.37 — repeat Phases 2–5 for each hop; never batch minors. To reach 1.37 in one
+       operational move, use <b>Blue/Green</b>: new cluster at 1.37, deploy workloads, shift traffic, retire the old cluster.
+       In-place control-plane upgrades cannot be downgraded; back up first.</p>
+  </section>
+
+  <!-- ===================== SOURCES ===================== -->
+  <section class="tab-panel" id="sources">
+    <h2>Sources</h2>
+    <h3>Live AWS calls</h3>
+    <ul><li>None succeeded — DOCS-ONLY run (<code>eks:ListClusters</code>, <code>eks:DescribeCluster</code>, <code>eks:DescribeClusterVersions</code> denied).</li>
+        <li>Version-lifecycle dates for 1.24/1.31/1.37 from <code>aws eks describe-cluster-versions --include-all</code>, checked 2026-11-11 (repository scan finding).</li></ul>
+    <h3>Documentation</h3>
+    <ul>
+      <li>https://docs.aws.amazon.com/eks/latest/userguide/update-cluster.html</li>
+      <li>https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions-standard.html</li>
+      <li>https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions-extended.html</li>
+      <li>https://docs.aws.amazon.com/eks/latest/userguide/update-managed-node-group.html</li>
+      <li>https://docs.aws.amazon.com/eks/latest/userguide/addon-compat.html</li>
+      <li>https://docs.aws.amazon.com/eks/latest/best-practices/cluster-upgrades.html</li>
+      <li>https://docs.aws.amazon.com/eks/latest/APIReference/API_DescribeClusterVersions.html</li>
+      <li>https://kubernetes.io/docs/reference/using-api/deprecation-guide/</li>
+    </ul>
+  </section>
+</div>
+
+<footer>
+  Read-only assessment · produced before any IaC change. EKS upgrades are one minor version at a time.
+  Unverified items are marked <span class="sev sev-verify">VERIFY</span>.
+</footer>
+
+<script>
+  document.getElementById('tabbar').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-tab]');
+    if (!btn) return;
+    var id = btn.getAttribute('data-tab');
+    document.querySelectorAll('nav.tabs button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+    document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.toggle('active', p.id === id); });
+  });
+</script>
+</body>
+</html>
